@@ -46,6 +46,10 @@ void setup() {
     pinMode(ledOptionOne, OUTPUT);
     pinMode(ledOptionTwo, OUTPUT);
 
+
+    digitalWrite(ledOptionOne, HIGH);
+    digitalWrite(ledOptionTwo, HIGH);
+
     // Inicializa o ESP-NOW
     if (esp_now_init() != ESP_OK) {
         Serial.println("Error initializing ESP-NOW");
