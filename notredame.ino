@@ -18,6 +18,8 @@ const float deadzone = 0.3;
 const float deadzoneSelect = 10.0;
 const float deadzoneOption = 50.0;
 
+int lastMessage;
+
 // Structure for data to be sent via ESP-NOW
 typedef struct struct_message {
     char message[32]; // Use char array instead of String for compatibility
@@ -102,26 +104,35 @@ void sendMessage(const char* message) {
 }
 
 void loop() {
+
     float eixoZ = getRotationZ(); // Get accumulated rotation
     float distance = measureDistance(); // Get distance
 
     if (eixoZ > deadzoneSelect) {
-        if (distance <= deadzoneOption && distance >= 0) { // Validate distance
+        if (distance <= deadzoneOption && lastMessage != 1) { // Validate distance
             Serial.println("Option one activated");
+            lastMessage = 1;
             sendMessage("OP1-ON");
-        } else {
+        } else if (lastMessage != 2){
             Serial.println("Option one deactivated");
+            lastMessage = 2;
             sendMessage("OP1-OFF");
+        } else {
+            Serial.println("Nothing was sent");
         }
     } else if (eixoZ < -deadzoneSelect) {
-        if (distance <= deadzoneOption && distance >= 0) { // Validate distance
+        if (distance <= deadzoneOption && lastMessage != 3) { // Validate distance
             Serial.println("Option two activated");
+            lastMessage = 3;
             sendMessage("OP2-ON");
-        } else {
+        } else if (lastMessage != 4){
             Serial.println("Option two deactivated");
+            lastMessage = 4;
             sendMessage("OP2-OFF");
+        } else {
+            Serial.println("Nothing was sent");
         }
     }
 
-    delay(250);
+    delay(100);
 }
