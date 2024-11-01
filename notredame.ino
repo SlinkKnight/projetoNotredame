@@ -1,61 +1,127 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include "Adafruit_VL53L0X.h"
+#include <esp_now.h>
+#include <WiFi.h>
 
 Adafruit_MPU6050 mpu;
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+
+// Define addresses
+#define MPU6050_ADDRESS 0x68  // or 0x69
+#define VL53L0X_ADDRESS 0x29   // or another address if necessary
 
 float totalRotationZ = 0;
 
-// Define a deadzone em graus
-const float deadzone = 0.3; // ajuste este valor conforme necessário
-const int deadzoneSelect = 10
+const float deadzone = 0.3;
+const float deadzoneSelect = 10.0;
+const float deadzoneOption = 50.0;
+
+// Structure for data to be sent via ESP-NOW
+typedef struct struct_message {
+    char message[32]; // Use char array instead of String for compatibility
+} struct_message;
+
+struct_message data;
+
+// MAC address of the receiver
+uint8_t receiverAddress[] = {0xD0, 0xEF, 0x76, 0x33, 0x6E, 0x40}; // Use the specific MAC address
 
 void setup(void) {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10); // Pause até que o console serial esteja aberto
+    Serial.begin(115200);
 
-  Serial.println("Adafruit MPU6050 test!");
-
-  // Tenta inicializar o MPU6050
-  if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    while (1) {
-      delay(10);
+    // Initialize ESP-NOW
+    WiFi.mode(WIFI_STA);
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        return;
     }
-  }
-  Serial.println("MPU6050 Found!");
 
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
-  Serial.println("");
-  delay(100);
+    // Add peer
+    esp_now_peer_info_t peerInfo;
+    memcpy(peerInfo.peer_addr, receiverAddress, 6);
+    peerInfo.channel = 0;  // Use default channel
+    peerInfo.encrypt = false; // No encryption
+
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("Failed to add peer");
+        return;
+    }
+
+    if (!lox.begin(VL53L0X_ADDRESS)) {
+        Serial.println("Failed to find VL53L0X chip");
+        while (1);
+    }
+
+    if (!mpu.begin(MPU6050_ADDRESS)) {
+        Serial.println("Failed to find MPU6050 chip");
+        while (1);
+    }
+
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+
+    delay(100);
 }
 
-// Função para pegar o valor do eixo Z e acumular a rotação
-float pegarEixoZ() {
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+float measureDistance() {
+    VL53L0X_RangingMeasurementData_t measure;
+    lox.rangingTest(&measure, false); // Execute measurement
 
-  float gyroZ = g.gyro.z * (180.0 / PI) * 0.1; // Converte para graus
+    if (measure.RangeStatus != 4) {  // Check for phase failures
+        return measure.RangeMilliMeter; // Return distance
+    }
+    return -1; // Return a default value in case of error
+}
 
-  // Acumula a rotação se estiver fora da deadzone
-  if (fabs(gyroZ) > deadzone) {
-    totalRotationZ += gyroZ;
-  }
+float getRotationZ() {
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
 
-  return totalRotationZ; // Retorna o total acumulado
+    float gyroZ = g.gyro.z * (180.0 / PI) * 0.1; // Convert to degrees
+
+    // Accumulate rotation if outside deadzone
+    if (fabs(gyroZ) > deadzone) {
+        totalRotationZ += gyroZ;
+    }
+
+    return totalRotationZ; // Return total accumulated rotation
+}
+
+void sendMessage(const char* message) {
+    strcpy(data.message, message);
+    esp_err_t result = esp_now_send(receiverAddress, (uint8_t *) &data, sizeof(data));
+    if (result == ESP_OK) {
+        Serial.println("Message sent successfully");
+    } else {
+        Serial.print("Error sending message: ");
+        Serial.println(result);
+    }
 }
 
 void loop() {
-  float eixoZ = pegarEixoZ(); // Chama a função e obtém o total acumulado
+    float eixoZ = getRotationZ(); // Get accumulated rotation
+    float distance = measureDistance(); // Get distance
 
-  if (eixoZ > deadzoneSelect) {
-    Serial.print("op1"); // Retorna op1 se eixoZ for maior que 20
-  } else if (eixoZ < -deadzoneSelect) {
-    Serial.println("op2"); // Retorna op2 se eixoZ for menor que -20
-  }
+    if (eixoZ > deadzoneSelect) {
+        if (distance <= deadzoneOption && distance >= 0) { // Validate distance
+            Serial.println("Option one activated");
+            sendMessage("OP1-ON");
+        } else {
+            Serial.println("Option one deactivated");
+            sendMessage("OP1-OFF");
+        }
+    } else if (eixoZ < -deadzoneSelect) {
+        if (distance <= deadzoneOption && distance >= 0) { // Validate distance
+            Serial.println("Option two activated");
+            sendMessage("OP2-ON");
+        } else {
+            Serial.println("Option two deactivated");
+            sendMessage("OP2-OFF");
+        }
+    }
 
-  delay(100); // Atraso em milissegundos
+    delay(250);
 }
