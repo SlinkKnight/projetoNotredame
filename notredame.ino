@@ -113,7 +113,7 @@ void loop() {
             Serial.println("Option one activated");
             lastMessage = 1;
             sendMessage("OP1-ON");
-        } else if (lastMessage != 2){
+        } else if (lastMessage != 2 && distance >= deadzoneOption){
             Serial.println("Option one deactivated");
             lastMessage = 2;
             sendMessage("OP1-OFF");
@@ -125,7 +125,7 @@ void loop() {
             Serial.println("Option two activated");
             lastMessage = 3;
             sendMessage("OP2-ON");
-        } else if (lastMessage != 4){
+        } else if (lastMessage != 4 && distance > deadzoneOption){
             Serial.println("Option two deactivated");
             lastMessage = 4;
             sendMessage("OP2-OFF");
@@ -133,6 +133,8 @@ void loop() {
             Serial.println("Nothing was sent");
         }
     }
+
+    Serial.println(lastMessage);
 
     delay(100);
 }
